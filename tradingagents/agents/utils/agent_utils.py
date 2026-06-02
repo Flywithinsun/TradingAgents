@@ -2,7 +2,6 @@ import functools
 import logging
 from typing import Any, Mapping, Optional
 
-import yfinance as yf
 from langchain_core.messages import HumanMessage, RemoveMessage
 
 # Import tools from separate utility files
@@ -26,6 +25,7 @@ from tradingagents.agents.utils.news_data_tools import (
 from tradingagents.agents.utils.market_data_validation_tools import (
     get_verified_market_snapshot
 )
+from tradingagents.dataflows.yfinance_cache import get_ticker_info
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def resolve_instrument_identity(ticker: str) -> dict:
     the lookup happens at most once per ticker per process.
     """
     try:
-        info = yf.Ticker(ticker.upper()).info or {}
+        info = get_ticker_info(ticker) or {}
     except Exception as exc:  # noqa: BLE001 — fail open, never block the run
         logger.debug("Could not resolve instrument identity for %s: %s", ticker, exc)
         return {}

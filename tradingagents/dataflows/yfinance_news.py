@@ -2,12 +2,11 @@
 
 from typing import Optional
 
-import yfinance as yf
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 from .config import get_config
-from .stockstats_utils import yf_retry
+from .yfinance_cache import get_ticker_news, search_news
 
 
 def _extract_article_data(article: dict) -> dict:
@@ -69,8 +68,7 @@ def get_news_yfinance(
     """
     article_limit = get_config()["news_article_limit"]
     try:
-        stock = yf.Ticker(ticker)
-        news = yf_retry(lambda: stock.get_news(count=article_limit))
+        news = get_ticker_news(ticker, article_limit)
 
         if not news:
             return f"No news found for {ticker}"
@@ -138,14 +136,10 @@ def get_global_news_yfinance(
 
     try:
         for query in search_queries:
-            search = yf_retry(lambda q=query: yf.Search(
-                query=q,
-                news_count=limit,
-                enable_fuzzy_query=True,
-            ))
+            search_results = search_news(query, limit)
 
-            if search.news:
-                for article in search.news:
+            if search_results:
+                for article in search_results:
                     # Handle both flat and nested structures
                     if "content" in article:
                         data = _extract_article_data(article)
