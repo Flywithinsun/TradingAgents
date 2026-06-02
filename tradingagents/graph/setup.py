@@ -7,7 +7,7 @@ from langgraph.prebuilt import ToolNode
 from tradingagents.agents import *
 from tradingagents.agents.utils.agent_states import AgentState
 
-from .analyst_execution import build_analyst_execution_plan
+from .analyst_execution import batch_analyst_specs, build_analyst_execution_plan
 from .conditional_logic import ConditionalLogic
 
 
@@ -29,6 +29,10 @@ class GraphSetup:
         self.conditional_logic = conditional_logic
         self.analyst_concurrency_limit = analyst_concurrency_limit
 
+    @staticmethod
+    def _batch_sync_node_name(batch_index: int) -> str:
+        return f"Analyst Batch Sync {batch_index + 1}"
+
     def setup_graph(
         self, selected_analysts=["market", "social", "news", "fundamentals"]
     ):
@@ -45,6 +49,7 @@ class GraphSetup:
             selected_analysts,
             concurrency_limit=self.analyst_concurrency_limit,
         )
+        analyst_batches = batch_analyst_specs(plan)
 
         analyst_factories = {
             "market": lambda: create_market_analyst(self.quick_thinking_llm),
@@ -73,6 +78,11 @@ class GraphSetup:
             workflow.add_node(spec.agent_node, analyst_factories[spec.key]())
             workflow.add_node(spec.clear_node, create_msg_delete())
             workflow.add_node(spec.tool_node, self.tool_nodes[spec.key])
+        for batch_index in range(len(analyst_batches)):
+            workflow.add_node(
+                self._batch_sync_node_name(batch_index),
+                create_msg_delete(),
+            )
 
         # Add other nodes
         workflow.add_node("Bull Researcher", bull_researcher_node)
@@ -85,11 +95,13 @@ class GraphSetup:
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
 
         # Define edges
-        # Start with the first analyst
-        workflow.add_edge(START, plan.specs[0].agent_node)
+        # Start every analyst in the first execution batch.
+        for spec in analyst_batches[0]:
+            workflow.add_edge(START, spec.agent_node)
 
-        # Connect analysts in sequence
-        for i, spec in enumerate(plan.specs):
+        # Each analyst loops with its tools until it emits a final report, then
+        # the batch waits at a sync node before the next batch starts.
+        for spec in plan.specs:
             current_analyst = spec.agent_node
             current_tools = spec.tool_node
             current_clear = spec.clear_node
@@ -102,11 +114,16 @@ class GraphSetup:
             )
             workflow.add_edge(current_tools, current_analyst)
 
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(plan.specs) - 1:
-                workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
+        for batch_index, batch_specs in enumerate(analyst_batches):
+            sync_node = self._batch_sync_node_name(batch_index)
+            for spec in batch_specs:
+                workflow.add_edge(spec.clear_node, sync_node)
+
+            if batch_index < len(analyst_batches) - 1:
+                for next_spec in analyst_batches[batch_index + 1]:
+                    workflow.add_edge(sync_node, next_spec.agent_node)
             else:
-                workflow.add_edge(current_clear, "Bull Researcher")
+                workflow.add_edge(sync_node, "Bull Researcher")
 
         # Add remaining edges
         workflow.add_conditional_edges(

@@ -2,6 +2,7 @@ import unittest
 
 from tradingagents.graph.analyst_execution import (
     AnalystWallTimeTracker,
+    batch_analyst_specs,
     build_analyst_execution_plan,
     get_initial_analyst_node,
     sync_analyst_tracker_from_chunk,
@@ -32,6 +33,19 @@ class AnalystExecutionPlanTests(unittest.TestCase):
         self.assertEqual(
             get_initial_analyst_node(plan),
             "Fundamentals Analyst",
+        )
+
+    def test_batches_specs_by_concurrency_limit(self):
+        plan = build_analyst_execution_plan(
+            ["market", "news", "fundamentals"],
+            concurrency_limit=2,
+        )
+
+        batches = batch_analyst_specs(plan)
+
+        self.assertEqual(
+            [[spec.key for spec in batch] for batch in batches],
+            [["market", "news"], ["fundamentals"]],
         )
 
     def test_social_key_displays_as_sentiment_analyst(self):

@@ -78,6 +78,15 @@ def get_initial_analyst_node(plan: AnalystExecutionPlan) -> str:
     return plan.specs[0].agent_node
 
 
+def batch_analyst_specs(plan: AnalystExecutionPlan) -> List[List[AnalystNodeSpec]]:
+    """Split analyst specs into execution batches honoring concurrency_limit."""
+    limit = plan.concurrency_limit
+    return [
+        plan.specs[idx : idx + limit]
+        for idx in range(0, len(plan.specs), limit)
+    ]
+
+
 class AnalystWallTimeTracker:
     def __init__(self, plan: AnalystExecutionPlan):
         self.plan = plan
